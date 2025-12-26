@@ -14,11 +14,11 @@ const TRANSCRIPTION_SCHEMA = {
         properties: {
           startTime: {
             type: Type.STRING,
-            description: "The highly accurate timestamp when the segment starts, including milliseconds (e.g., '00:00:05.123').",
+            description: "The highly accurate timestamp when the segment starts, including milliseconds (e.g., '00:00:05.123'). Do not include units like 's'.",
           },
           endTime: {
             type: Type.STRING,
-            description: "The highly accurate timestamp when the segment ends, including milliseconds (e.g., '00:00:08.456').",
+            description: "The highly accurate timestamp when the segment ends, including milliseconds (e.g., '00:00:08.456'). Do not include units like 's'.",
           },
           text: {
             type: Type.STRING,

@@ -7,22 +7,43 @@ import { decodeBase64, decodeAudioData } from '../utils/audio';
 interface SegmentItemProps {
   segment: TranscriptionSegment;
   isActive?: boolean;
+  isManualSeek?: boolean;
   onSelect: (startTime: string) => void;
 }
 
-const SegmentItem: React.FC<SegmentItemProps> = ({ segment, isActive, onSelect }) => {
+const SegmentItem: React.FC<SegmentItemProps> = ({ segment, isActive, isManualSeek, onSelect }) => {
   const elementRef = useRef<HTMLButtonElement>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
-    if (isActive && elementRef.current) {
-      elementRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
+    if (isActive && elementRef.current && !isManualSeek) {
+      const element = elementRef.current;
+      const container = element.closest('.overflow-y-auto');
+      
+      if (container) {
+        const scrollTimeout = window.setTimeout(() => {
+          const containerHeight = container.clientHeight;
+          const elementTop = element.offsetTop;
+          const elementHeight = element.clientHeight;
+          const scrollTop = container.scrollTop;
+
+          const buffer = 60; 
+          const isFullyVisible = (elementTop >= scrollTop + buffer) && 
+                                (elementTop + elementHeight <= scrollTop + containerHeight - buffer);
+
+          if (!isFullyVisible) {
+            const targetScrollTop = elementTop - (containerHeight / 2) + (elementHeight / 2);
+            container.scrollTo({
+              top: targetScrollTop,
+              behavior: 'smooth'
+            });
+          }
+        }, 50);
+        return () => window.clearTimeout(scrollTimeout);
+      }
     }
-  }, [isActive]);
+  }, [isActive, isManualSeek]);
 
   const handleSpeak = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -32,7 +53,7 @@ const SegmentItem: React.FC<SegmentItemProps> = ({ segment, isActive, onSelect }
     setIsSpeaking(true);
     try {
       const audioData = await generateSpeech(segment.translatedText);
-      if (!audioData) throw new Error("No audio data received");
+      if (!audioData) throw new Error("No audio data");
 
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -48,7 +69,7 @@ const SegmentItem: React.FC<SegmentItemProps> = ({ segment, isActive, onSelect }
       source.onended = () => setIsSpeaking(false);
       source.start();
     } catch (error) {
-      console.error("Failed to play TTS:", error);
+      console.error("TTS error:", error);
       setIsSpeaking(false);
     }
   };
@@ -56,59 +77,53 @@ const SegmentItem: React.FC<SegmentItemProps> = ({ segment, isActive, onSelect }
   return (
     <button
       ref={elementRef}
-      onClick={() => onSelect(segment.startTime)}
-      className={`w-full text-left group flex flex-col p-3 border-b border-slate-100 transition-all focus:outline-none ${
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        onSelect(segment.startTime);
+      }}
+      className={`w-full text-left flex flex-col px-3 py-1.5 transition-all focus:outline-none relative select-none border-l-4 ${
         isActive 
-          ? 'bg-blue-100/70 border-l-4 border-l-blue-600 shadow-sm z-10' 
-          : 'hover:bg-blue-50/50 border-l-4 border-l-transparent'
+          ? 'bg-blue-50/90 border-blue-600 shadow-sm z-10' 
+          : 'hover:bg-slate-50/80 border-transparent text-slate-500'
       }`}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded transition-colors ${
-          isActive 
-            ? 'text-white bg-blue-600' 
-            : 'text-blue-600 bg-blue-50 group-hover:bg-blue-100'
+      <div className="flex items-center gap-2 mb-0.5 pointer-events-none">
+        <span className={`text-[10px] font-black font-mono px-1.5 py-0.5 rounded tracking-tighter ${
+          isActive ? 'text-white bg-blue-600' : 'text-blue-500 bg-blue-100/30'
         }`}>
-          {segment.startTime} - {segment.endTime}
+          {segment.startTime}
         </span>
-        <svg 
-          xmlns="http://www.w3.org/2000/svg" 
-          width="12" 
-          height="12" 
-          viewBox="0 0 24 24" 
-          fill="currentColor" 
-          className={`transition-opacity ${isActive ? 'text-blue-600 opacity-100' : 'text-blue-400 opacity-0 group-hover:opacity-100'}`}
-        >
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
+        {isActive && (
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+        )}
       </div>
-      <p className={`leading-relaxed text-sm transition-colors ${
-        isActive ? 'text-slate-900 font-bold' : 'text-slate-700 group-hover:text-slate-900 font-medium'
+      
+      {/* Transcription Text - Big font, tight spacing */}
+      <p className={`text-xl leading-tight transition-all duration-150 ${
+        isActive ? 'text-slate-900 font-bold' : 'text-slate-800 font-medium'
       }`}>
         {segment.text}
       </p>
+
       {segment.translatedText && (
-        <div className="mt-2 flex items-start gap-2">
-          <p className={`leading-relaxed text-sm italic border-l-2 pl-2 transition-colors flex-1 ${
-            isActive ? 'text-indigo-800 border-indigo-400 font-semibold' : 'text-indigo-600 border-indigo-100'
+        <div className={`mt-1.5 p-2 rounded-lg border flex items-start gap-3 transition-all ${
+          isActive ? 'bg-white/95 border-indigo-200 shadow-sm' : 'bg-slate-50/50 border-slate-100'
+        }`}>
+          <p className={`text-base italic flex-1 leading-tight ${
+            isActive ? 'text-indigo-800 font-bold' : 'text-slate-600'
           }`}>
             {segment.translatedText}
           </p>
           <button 
+            type="button"
             onClick={handleSpeak}
             disabled={isSpeaking}
-            className={`flex-shrink-0 p-1.5 rounded-full transition-all ${
-              isSpeaking 
-                ? 'bg-indigo-100 text-indigo-400 animate-pulse' 
-                : 'bg-indigo-50 text-indigo-500 hover:bg-indigo-100 active:scale-95'
+            className={`p-1 rounded-md transition-all shadow-sm ${
+              isSpeaking ? 'bg-indigo-600 text-white' : 'bg-indigo-100/50 text-indigo-600 hover:bg-indigo-100'
             }`}
-            title="Listen to translation"
           >
-            {isSpeaking ? (
-               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
-            ) : (
-               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-            )}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
           </button>
         </div>
       )}

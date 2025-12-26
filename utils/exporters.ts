@@ -4,16 +4,17 @@ import { TranscriptionSegment } from "../types";
 /**
  * Robustly parses various timestamp formats into total seconds.
  */
-const parseTimestampToSeconds = (ts: string): number => {
-  if (!ts) return 0;
-  // Handles both comma and dot for millisecond separation
-  const cleanTs = ts.replace(',', '.');
-  const parts = cleanTs.split(':').map(Number);
-  
-  if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
-  if (parts.length === 2) return (parts[0] * 60) + parts[1];
-  if (parts.length === 1) return parts[0];
-  return 0;
+const parseTimestampToSeconds = (ts: string | number): number => {
+  if (ts === undefined || ts === null) return 0;
+  let str = ts.toString().trim().toLowerCase();
+  str = str.replace(/[ms]/g, '').replace(',', '.');
+
+  if (str.includes(':')) {
+    const parts = str.split(':').map(p => parseFloat(p) || 0);
+    if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+    if (parts.length === 2) return (parts[0] * 60) + parts[1];
+  }
+  return parseFloat(str) || 0;
 };
 
 const formatSecondsToSRT = (totalSeconds: number): string => {
@@ -69,30 +70,22 @@ export const exportAsLRC = (segments: TranscriptionSegment[], type: 'original' |
     const endTime = parseTimestampToSeconds(s.endTime);
     const text = type === 'translated' ? (s.translatedText || '') : s.text;
 
-    // Current lyric line
     lines.push(`${formatSecondsToLRC(startTime)}${text}`);
 
     const nextS = segments[i + 1];
     if (nextS) {
       const nextStartTime = parseTimestampToSeconds(nextS.startTime);
-      const clearingTime = endTime + 4;
-      // If there is a gap significant enough to hide the text (+4s from end), 
-      // and it happens before the next line starts.
+      const clearingTime = endTime + 2;
       if (nextStartTime > clearingTime) {
         lines.push(`${formatSecondsToLRC(clearingTime)}`);
       }
     } else {
-      // Final segment logic per user request
-      const clearingTime = endTime + 4;
-      
-      // If we have totalDuration info, only add clearing timestamp if it satisfies the gap rule
+      const clearingTime = endTime + 2;
       if (totalDuration !== undefined) {
         if (clearingTime <= totalDuration) {
           lines.push(`${formatSecondsToLRC(clearingTime)}`);
         }
-        // If clearingTime > totalDuration, we don't add any clearing line as requested.
       } else {
-        // Fallback if duration is unknown: just add it
         lines.push(`${formatSecondsToLRC(clearingTime)}`);
       }
     }
