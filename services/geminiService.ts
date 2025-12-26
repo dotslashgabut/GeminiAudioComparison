@@ -33,22 +33,46 @@ const TRANSCRIPTION_SCHEMA = {
 };
 
 /**
- * Ensures a timestamp string strictly follows HH:MM:SS.mmm
+ * Robustly normalizes timestamp strings to HH:MM:SS.mmm
+ * Handles cases where models confuse HH:MM:SS with MM:SS:mmm
  */
 function normalizeTimestamp(ts: string): string {
-  const parts = ts.split(':');
-  if (parts.length < 3) return ts; // Return as is if format is unrecognizable
+  if (!ts) return "00:00:00.000";
+  
+  // Clean string from any non-digit/colon/period characters
+  const clean = ts.replace(/[^\d:.]/g, '');
+  
+  // Split by both : and . to identify components
+  const components = clean.split(/[:.]/);
+  
+  let hh = "00", mm = "00", ss = "00", mmm = "000";
 
-  let secondsPart = parts[2];
-  if (!secondsPart.includes('.')) {
-    // If milliseconds are missing, append .000
-    parts[2] = secondsPart + ".000";
-  } else {
-    // Ensure 3 digits for milliseconds
-    const [s, ms] = secondsPart.split('.');
-    parts[2] = `${s}.${ms.padEnd(3, '0').substring(0, 3)}`;
+  if (components.length >= 4) {
+    // Likely HH:MM:SS:mmm or HH:MM:SS.mmm
+    [hh, mm, ss, mmm] = components;
+  } else if (components.length === 3) {
+    // Tricky case: HH:MM:SS or MM:SS:mmm?
+    // If the 3rd component has 3 digits, it's almost certainly milliseconds
+    if (components[2].length === 3) {
+      [mm, ss, mmm] = components;
+    } else {
+      [hh, mm, ss] = components;
+    }
+  } else if (components.length === 2) {
+    // Assume MM:SS
+    [mm, ss] = components;
+  } else if (components.length === 1) {
+    // Assume seconds only
+    ss = components[0];
   }
-  return parts.map(p => p.padStart(2, '0')).join(':');
+
+  // Final formatting and padding
+  const fHH = hh.padStart(2, '0').substring(0, 2);
+  const fMM = mm.padStart(2, '0').substring(0, 2);
+  const fSS = ss.padStart(2, '0').substring(0, 2);
+  const fMMM = mmm.padEnd(3, '0').substring(0, 3);
+
+  return `${fHH}:${fMM}:${fSS}.${fMMM}`;
 }
 
 export async function transcribeAudio(
@@ -59,7 +83,11 @@ export async function transcribeAudio(
   try {
     const isGemini3 = modelName.includes('gemini-3');
     
-    // Instruksi yang sangat ketat untuk format milidetik
+    // Instruksi temporal yang lebih tajam
+    const syncInstruction = isGemini3 
+      ? "PERINGATAN: Jangan memberikan timestamp mulai sebelum suara vokal benar-benar terdengar (hindari antisipasi). Pastikan 'startTime' selaras dengan milidetik pertama fonem awal kata tersebut."
+      : "PENTING: Gunakan format LENGKAP HH:MM:SS.mmm. Contoh: Jika 23 detik, tulis '00:00:23.000', JANGAN tulis '00:23:000'. Pastikan bagian jam (HH) selalu ada.";
+
     const precisionInstruction = "ANALISIS gelombang suara secara mendetail. JANGAN MEMBULATKAN waktu. Gunakan presisi milidetik (mmm) secara eksplisit. Format WAJIB: HH:MM:SS.mmm.";
 
     const response = await ai.models.generateContent({
@@ -74,10 +102,12 @@ export async function transcribeAudio(
               },
             },
             {
-              text: `Transkripsikan audio ini. ${precisionInstruction} 
-              Kembalikan JSON dengan properti 'segments'. 
-              Sama seperti Gemini 3, format waktu harus HH:MM:SS.mmm. 
-              Ketepatan milidetik sangat penting agar teks tidak melompat-lompat saat diputar.`,
+              text: `Transkripsikan audio ini. 
+              ${precisionInstruction}
+              ${syncInstruction}
+              
+              Format JSON: {"segments": [{"startTime": "HH:MM:SS.mmm", "endTime": "HH:MM:SS.mmm", "text": "..."}]}
+              Pastikan konsistensi format waktu agar UI tidak melompat.`,
             },
           ],
         },
@@ -95,7 +125,6 @@ export async function transcribeAudio(
     const parsed = JSON.parse(text);
     const segments = parsed.segments || [];
 
-    // Post-processing untuk menjamin kualitas format timestamp
     return segments.map((s: any) => ({
       startTime: normalizeTimestamp(String(s.startTime)),
       endTime: normalizeTimestamp(String(s.endTime)),
@@ -119,7 +148,7 @@ export async function translateSegments(
           parts: [
             {
               text: `Translate these segments into ${targetLanguage}. 
-              Keep the high-precision HH:MM:SS.mmm timestamps EXACTLY as they are.
+              PENTING: JANGAN MENGUBAH angka timestamp sedikitpun. Pertahankan format HH:MM:SS.mmm secara eksak.
               Data: ${JSON.stringify(segments)}`,
             },
           ],

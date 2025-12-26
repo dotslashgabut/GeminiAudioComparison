@@ -34,6 +34,8 @@ export const parseTimestamp = (timestamp: string | number): number => {
 
 const App: React.FC = () => {
   const [audioFile, setAudioFile] = useState<AudioFileData | null>(null);
+  const [urlInput, setUrlInput] = useState("");
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
   const [targetLang, setTargetLang] = useState("Indonesian");
   const [currentTime, setCurrentTime] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -85,6 +87,35 @@ const App: React.FC = () => {
         setCurrentTime(0);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUrlLoad = async () => {
+    if (!urlInput.trim()) return;
+    setIsFetchingUrl(true);
+    try {
+      const response = await fetch(urlInput);
+      if (!response.ok) throw new Error('Failed to fetch audio from URL. Check if URL is correct or if site allows cross-origin requests.');
+      
+      const blob = await response.blob();
+      const reader = new FileReader();
+      
+      reader.onloadend = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        setAudioFile({
+          base64,
+          mimeType: blob.type || 'audio/mpeg',
+          fileName: urlInput.split('/').pop()?.split('?')[0] || 'remote-audio',
+          previewUrl: URL.createObjectURL(blob),
+        });
+        setCurrentTime(0);
+        setIsFetchingUrl(false);
+      };
+      
+      reader.readAsDataURL(blob);
+    } catch (error: any) {
+      alert(`Error loading audio URL: ${error.message}`);
+      setIsFetchingUrl(false);
     }
   };
 
@@ -203,63 +234,89 @@ const App: React.FC = () => {
 
   return (
     <div ref={appContainerRef} className="h-screen flex flex-col bg-slate-100 overflow-hidden font-sans">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0 z-30 shadow-sm">
-        <div className="max-w-full mx-auto space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
-                Gemini Audio comparison
+      <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 md:py-4 flex-shrink-0 z-30 shadow-sm overflow-y-auto max-h-[40vh] md:max-h-none">
+        <div className="max-w-full mx-auto space-y-3 md:space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 md:gap-4">
+            <div className="flex items-center justify-between">
+              <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600 md:w-7 md:h-7"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
+                <span className="truncate">Gemini Transcription</span>
               </h1>
+              <button onClick={toggleFullscreen} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl border border-slate-200 shadow-sm bg-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
+              </button>
             </div>
 
-            <div className="flex items-center gap-3 flex-wrap">
-              <input type="file" accept="audio/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-              <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all">
-                {audioFile ? 'Change File' : 'Upload Audio'}
-              </button>
+            <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+              {/* URL Input Group */}
+              <div className="flex items-center bg-slate-100 rounded-xl border border-slate-200 p-1 flex-1 min-w-[200px] md:flex-none">
+                <input 
+                  type="text" 
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="Paste audio URL..." 
+                  className="bg-transparent text-xs md:text-sm px-2 md:px-3 py-1 outline-none flex-1 w-full text-slate-700"
+                />
+                <button 
+                  onClick={handleUrlLoad}
+                  disabled={isFetchingUrl || !urlInput}
+                  className={`px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold rounded-lg transition-all whitespace-nowrap ${isFetchingUrl ? 'bg-slate-200 text-slate-400' : 'bg-white text-blue-600 shadow-sm hover:bg-slate-50 border border-slate-200'}`}
+                >
+                  {isFetchingUrl ? '...' : 'Load'}
+                </button>
+              </div>
 
-              <button
-                disabled={!audioFile || isTranscribing}
-                onClick={startTranscription}
-                className={`px-6 py-2 text-sm font-bold text-white rounded-xl shadow-lg transition-all ${!audioFile || isTranscribing ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
-              >
-                {isTranscribing ? 'Processing...' : 'Transcribe'}
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input type="file" accept="audio/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                <button onClick={() => fileInputRef.current?.click()} className="px-3 md:px-4 py-2 text-xs md:text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all whitespace-nowrap">
+                  {audioFile ? 'Change' : 'Upload'}
+                </button>
+                
+                <button
+                  disabled={!audioFile || isTranscribing}
+                  onClick={startTranscription}
+                  className={`px-4 md:px-6 py-2 text-xs md:text-sm font-bold text-white rounded-xl shadow-lg transition-all whitespace-nowrap ${!audioFile || isTranscribing ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  {isTranscribing ? '...' : 'Transcribe'}
+                </button>
+              </div>
 
               {hasResults && (
-                <div className="flex items-center gap-2 border-l pl-3 ml-1 border-slate-200">
+                <div className="flex items-center gap-2 border-l pl-2 md:pl-3 border-slate-200 flex-wrap">
                   <select
                     value={targetLang}
                     onChange={(e) => setTargetLang(e.target.value)}
-                    className="text-sm font-medium border-slate-300 rounded-xl py-2 px-3 bg-white shadow-sm text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="text-xs md:text-sm font-medium border-slate-300 rounded-xl py-1.5 md:py-2 px-2 md:px-3 bg-white shadow-sm text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                   >
                     {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                   <button
                     disabled={isTranslating}
                     onClick={handleTranslate}
-                    className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 rounded-xl shadow-lg hover:bg-indigo-700 disabled:bg-slate-300 transition-all"
+                    className="px-3 md:px-5 py-1.5 md:py-2 text-xs md:text-sm font-bold text-white bg-indigo-600 rounded-xl shadow-lg hover:bg-indigo-700 disabled:bg-slate-300 transition-all whitespace-nowrap"
                   >
-                    {isTranslating ? 'Translating...' : 'Translate'}
+                    {isTranslating ? '...' : 'Translate'}
                   </button>
                 </div>
               )}
 
-              <button onClick={toggleFullscreen} className="p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl border border-slate-200 shadow-sm bg-white ml-auto">
+              <button onClick={toggleFullscreen} className="hidden lg:block p-2.5 text-slate-600 hover:bg-slate-100 rounded-xl border border-slate-200 shadow-sm bg-white">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
               </button>
             </div>
           </div>
 
           {audioFile && (
-            <div className="pt-2 border-t border-slate-100 flex items-center gap-4">
+            <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 w-full">
+              <span className="text-[10px] md:text-xs font-bold text-slate-500 truncate max-w-full md:max-w-xs bg-slate-50 px-2 py-1 rounded">
+                Playing: {audioFile.fileName}
+              </span>
               <audio
                 ref={audioRef}
                 src={audioFile.previewUrl}
                 onTimeUpdate={handleTimeUpdate}
                 controls
-                className="h-9 flex-1 max-w-full"
+                className="h-9 w-full md:flex-1"
               />
             </div>
           )}
@@ -278,7 +335,7 @@ const App: React.FC = () => {
               <div key={side} className="flex flex-col h-full min-h-0 bg-white">
                 <div className={`px-4 py-2 border-b border-slate-200 flex-shrink-0 z-10 ${side === 'left' ? 'bg-slate-50/50' : 'bg-indigo-50/30'}`}>
                   <div className="flex items-center justify-between mb-1">
-                    <h2 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-[10px] md:text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${side === 'left' ? 'bg-blue-500' : 'bg-indigo-500'}`}></span>
                       {results[side].modelName}
                     </h2>
@@ -327,7 +384,7 @@ const App: React.FC = () => {
                   {isLoading ? (
                     <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-8">
                       <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      <p className="mt-4 text-xs font-black text-slate-700 tracking-widest animate-pulse uppercase">Transcribing...</p>
+                      <p className="mt-4 text-[10px] md:text-xs font-black text-slate-700 tracking-widest animate-pulse uppercase">Transcribing...</p>
                     </div>
                   ) : results[side].segments.length > 0 ? (
                     <div className="space-y-0.5">
@@ -344,7 +401,7 @@ const App: React.FC = () => {
                   ) : (
                     <div className="h-full flex flex-col items-center justify-center p-8 text-center opacity-25">
                       <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>
-                      <p className="mt-4 text-xs font-black uppercase tracking-widest">Awaiting Audio</p>
+                      <p className="mt-4 text-[10px] md:text-xs font-black uppercase tracking-widest">Awaiting Audio</p>
                     </div>
                   )}
                 </div>
@@ -357,7 +414,7 @@ const App: React.FC = () => {
       <footer className="bg-white border-t border-slate-200 p-2 text-[10px] font-bold text-slate-400 flex-shrink-0">
         <div className="max-w-[98%] mx-auto flex justify-between items-center px-4">
           <div className="flex items-center gap-4">
-            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded uppercase">Dual Engine Comparative Analysis</span>
+            <span className="hidden md:inline bg-slate-100 text-slate-600 px-2 py-0.5 rounded uppercase">Dual Engine Comparative Analysis</span>
           </div>
           <div className="font-mono text-[9px] text-slate-500">PLAYHEAD: {currentTime.toFixed(3)}s</div>
         </div>
