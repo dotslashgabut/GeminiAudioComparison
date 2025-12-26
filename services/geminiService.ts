@@ -14,11 +14,11 @@ const TRANSCRIPTION_SCHEMA = {
         properties: {
           startTime: {
             type: Type.STRING,
-            description: "The timestamp when the segment starts. MUST follow format HH:MM:SS.mmm (e.g., '00:00:05.123'). Do not use colons for milliseconds.",
+            description: "The timestamp when the segment starts. Format: HH:MM:SS.mmm (e.g., '00:00:05.123'). Use high-fidelity millisecond precision based on the exact start of the sound.",
           },
           endTime: {
             type: Type.STRING,
-            description: "The timestamp when the segment ends. MUST follow format HH:MM:SS.mmm (e.g., '00:00:08.456'). Do not use colons for milliseconds.",
+            description: "The timestamp when the segment ends. Format: HH:MM:SS.mmm (e.g., '00:00:08.456'). Capture the precise moment the last word finishes.",
           },
           text: {
             type: Type.STRING,
@@ -38,6 +38,13 @@ export async function transcribeAudio(
   mimeType: string
 ): Promise<TranscriptionSegment[]> {
   try {
+    const isGemini3 = modelName.includes('gemini-3');
+    
+    // Perintah khusus untuk Gemini 3 agar lebih teliti terhadap milidetik
+    const precisionInstruction = isGemini3 
+      ? "Perform a high-fidelity analysis of the audio frequencies to determine word boundaries. DO NOT round timestamps to the nearest second or tenth. Provide precision to the exact millisecond (mmm)." 
+      : "Provide accurate timestamps with millisecond precision.";
+
     const response = await ai.models.generateContent({
       model: modelName,
       contents: [
@@ -50,7 +57,9 @@ export async function transcribeAudio(
               },
             },
             {
-              text: "Transcribe this audio. Return a JSON object with 'segments'. Every segment MUST have 'startTime' and 'endTime' in EXACTLY HH:MM:SS.mmm format (e.g. 00:01:23.456). Accuracy is priority.",
+              text: `Transcribe this audio with extreme temporal accuracy. ${precisionInstruction} 
+              Return a JSON object with 'segments'. Every segment MUST have 'startTime' and 'endTime' in EXACTLY HH:MM:SS.mmm format. 
+              Avoid generic timestamps like '.000'.`,
             },
           ],
         },
@@ -58,7 +67,7 @@ export async function transcribeAudio(
       config: {
         responseMimeType: "application/json",
         responseSchema: TRANSCRIPTION_SCHEMA,
-        temperature: 0.1,
+        temperature: 0.1, // Rendah agar lebih faktual dan presisi
       },
     });
 
@@ -84,7 +93,7 @@ export async function translateSegments(
         {
           parts: [
             {
-              text: `Translate these segments into ${targetLanguage}. Keep the exact HH:MM:SS.mmm timestamps.
+              text: `Translate these segments into ${targetLanguage}. Maintain the original high-precision HH:MM:SS.mmm timestamps exactly as provided.
               Data: ${JSON.stringify(segments)}`,
             },
           ],
