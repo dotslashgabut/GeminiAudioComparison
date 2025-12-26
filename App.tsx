@@ -6,11 +6,25 @@ import SegmentItem from './components/SegmentItem';
 import * as Exporters from './utils/exporters';
 
 const LANGUAGES = [
-  "Indonesian", "English", "Japanese", "Korean", "Spanish", "French", "German",
-  "Chinese (Simplified)", "Chinese (Traditional)", "Arabic", "Russian",
-  "Portuguese", "Italian", "Dutch", "Turkish", "Vietnamese", "Thai", "Hindi",
-  "Malay", "Filipino"
-];
+  "Afrikaans", "Albanian", "Amharic", "Arabic", "Armenian", "Azerbaijani",
+  "Basque", "Belarusian", "Bengali", "Bosnian", "Bulgarian", "Catalan",
+  "Cebuano", "Chichewa", "Chinese (Simplified)", "Chinese (Traditional)",
+  "Corsican", "Croatian", "Czech", "Danish", "Dutch", "English", "Esperanto",
+  "Estonian", "Filipino", "Finnish", "French", "Frisian", "Galician",
+  "Georgian", "German", "Greek", "Gujarati", "Haitian Creole", "Hausa",
+  "Hawaiian", "Hebrew", "Hindi", "Hmong", "Hungarian", "Icelandic", "Igbo",
+  "Indonesian", "Irish", "Italian", "Japanese", "Javanese", "Kannada",
+  "Kazakh", "Khmer", "Kinyarwanda", "Korean", "Kurdish (Kurmanji)", "Kyrgyz",
+  "Lao", "Latin", "Latvian", "Lithuanian", "Luxembourgish", "Macedonian",
+  "Malagasy", "Malay", "Malayalam", "Maltese", "Maori", "Marathi", "Mongolian",
+  "Myanmar (Burmese)", "Nepali", "Norwegian", "Odia (Oriya)", "Pashto",
+  "Persian", "Polish", "Portuguese", "Punjabi", "Romanian", "Russian",
+  "Samoan", "Scots Gaelic", "Serbian", "Sesotho", "Shona", "Sindhi", "Sinhala",
+  "Slovak", "Slovenian", "Somali", "Spanish", "Sundanese", "Swahili", "Swedish",
+  "Tajik", "Tamil", "Tatar", "Telugu", "Thai", "Turkish", "Turkmen",
+  "Ukrainian", "Urdu", "Uyghur", "Uzbek", "Vietnamese", "Welsh", "Xhosa",
+  "Yiddish", "Yoruba", "Zulu"
+].sort();
 
 /**
  * Robustly parses various timestamp formats into total seconds.
