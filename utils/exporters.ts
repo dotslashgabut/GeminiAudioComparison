@@ -64,28 +64,35 @@ export const exportAsSRT = (segments: TranscriptionSegment[], type: 'original' |
 
 export const exportAsLRC = (segments: TranscriptionSegment[], type: 'original' | 'translated', totalDuration?: number): string => {
   const lines: string[] = [];
+  const CLEAR_OFFSET = 4; // Berdasarkan contoh user: 11.72 + 4 = 15.72
+
   for (let i = 0; i < segments.length; i++) {
     const s = segments[i];
     const startTime = parseTimestampToSeconds(s.startTime);
     const endTime = parseTimestampToSeconds(s.endTime);
     const text = type === 'translated' ? (s.translatedText || '') : s.text;
 
+    // Tambahkan baris lirik utama
     lines.push(`${formatSecondsToLRC(startTime)}${text}`);
 
     const nextS = segments[i + 1];
+    const clearingTime = endTime + CLEAR_OFFSET;
+
     if (nextS) {
       const nextStartTime = parseTimestampToSeconds(nextS.startTime);
-      const clearingTime = endTime + 2;
+      // Jika ada jeda signifikan sebelum lirik berikutnya mulai, bersihkan layar
       if (nextStartTime > clearingTime) {
         lines.push(`${formatSecondsToLRC(clearingTime)}`);
       }
     } else {
-      const clearingTime = endTime + 2;
+      // Logika untuk segmen terakhir
       if (totalDuration !== undefined) {
+        // Hanya tambah baris kosong jika durasi audio masih cukup
         if (clearingTime <= totalDuration) {
           lines.push(`${formatSecondsToLRC(clearingTime)}`);
         }
       } else {
+        // Jika durasi tidak diketahui, tambahkan saja untuk keamanan
         lines.push(`${formatSecondsToLRC(clearingTime)}`);
       }
     }
