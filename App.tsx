@@ -53,6 +53,11 @@ const App: React.FC = () => {
   const [targetLang, setTargetLang] = useState("Indonesian");
   const [currentTime, setCurrentTime] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Recording State
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+
   const [results, setResults] = useState<{
     left: TranscriptionResult;
     right: TranscriptionResult;
@@ -67,6 +72,11 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const appContainerRef = useRef<HTMLDivElement>(null);
   const interactionTimeout = useRef<number | null>(null);
+  
+  // Recording Refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -132,6 +142,70 @@ const App: React.FC = () => {
       setIsFetchingUrl(false);
     }
   };
+
+  // --- Recording Logic ---
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          setAudioFile({
+            base64,
+            mimeType: 'audio/webm',
+            fileName: `recording-${new Date().toISOString()}.webm`,
+            previewUrl: URL.createObjectURL(audioBlob),
+          });
+          setCurrentTime(0);
+        };
+        reader.readAsDataURL(audioBlob);
+        
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      recordingIntervalRef.current = window.setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Could not access microphone. Please ensure permissions are granted.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
+    }
+  };
+
+  const formatRecordingTime = (seconds: number) => {
+    const mm = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const ss = (seconds % 60).toString().padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+  // -----------------------
 
   const handleSegmentClick = (startTime: string, side: 'left' | 'right') => {
     setLastInteractedSide(side);
@@ -268,13 +342,14 @@ const App: React.FC = () => {
                   type="text" 
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="Paste audio URL..." 
-                  className="bg-transparent text-xs md:text-sm px-2 md:px-3 py-1 outline-none flex-1 w-full text-slate-700"
+                  placeholder="Paste audio URL..."
+                  disabled={isRecording}
+                  className="bg-transparent text-xs md:text-sm px-2 md:px-3 py-1 outline-none flex-1 w-full text-slate-700 disabled:opacity-50"
                 />
                 <button 
                   onClick={handleUrlLoad}
-                  disabled={isFetchingUrl || !urlInput}
-                  className={`px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold rounded-lg transition-all whitespace-nowrap ${isFetchingUrl ? 'bg-slate-200 text-slate-400' : 'bg-white text-blue-600 shadow-sm hover:bg-slate-50 border border-slate-200'}`}
+                  disabled={isFetchingUrl || !urlInput || isRecording}
+                  className={`px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold rounded-lg transition-all whitespace-nowrap ${isFetchingUrl || isRecording ? 'bg-slate-200 text-slate-400' : 'bg-white text-blue-600 shadow-sm hover:bg-slate-50 border border-slate-200'}`}
                 >
                   {isFetchingUrl ? '...' : 'Load'}
                 </button>
@@ -282,14 +357,32 @@ const App: React.FC = () => {
 
               <div className="flex items-center gap-2 flex-wrap">
                 <input type="file" accept="audio/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                <button onClick={() => fileInputRef.current?.click()} className="px-3 md:px-4 py-2 text-xs md:text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all whitespace-nowrap">
+                <button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  disabled={isRecording}
+                  className={`px-3 md:px-4 py-2 text-xs md:text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all whitespace-nowrap ${isRecording ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
                   {audioFile ? 'Change' : 'Upload'}
                 </button>
                 
+                {/* Record Button */}
+                <button 
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={isTranscribing}
+                  className={`px-3 md:px-4 py-2 text-xs md:text-sm font-semibold rounded-xl shadow-sm transition-all flex items-center gap-2 whitespace-nowrap border ${
+                    isRecording 
+                      ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' 
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  } ${isTranscribing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-600 animate-pulse' : 'bg-slate-400'}`}></span>
+                  {isRecording ? `Stop (${formatRecordingTime(recordingTime)})` : 'Record'}
+                </button>
+
                 <button
-                  disabled={!audioFile || isTranscribing}
+                  disabled={!audioFile || isTranscribing || isRecording}
                   onClick={startTranscription}
-                  className={`px-4 md:px-6 py-2 text-xs md:text-sm font-bold text-white rounded-xl shadow-lg transition-all whitespace-nowrap ${!audioFile || isTranscribing ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  className={`px-4 md:px-6 py-2 text-xs md:text-sm font-bold text-white rounded-xl shadow-lg transition-all whitespace-nowrap ${!audioFile || isTranscribing || isRecording ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
                   {isTranscribing ? '...' : 'Transcribe'}
                 </button>
@@ -300,12 +393,13 @@ const App: React.FC = () => {
                   <select
                     value={targetLang}
                     onChange={(e) => setTargetLang(e.target.value)}
-                    className="text-xs md:text-sm font-medium border-slate-300 rounded-xl py-1.5 md:py-2 px-2 md:px-3 bg-white shadow-sm text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                    disabled={isRecording}
+                    className="text-xs md:text-sm font-medium border-slate-300 rounded-xl py-1.5 md:py-2 px-2 md:px-3 bg-white shadow-sm text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
                   >
                     {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                   <button
-                    disabled={isTranslating}
+                    disabled={isTranslating || isRecording}
                     onClick={handleTranslate}
                     className="px-3 md:px-5 py-1.5 md:py-2 text-xs md:text-sm font-bold text-white bg-indigo-600 rounded-xl shadow-lg hover:bg-indigo-700 disabled:bg-slate-300 transition-all whitespace-nowrap"
                   >
