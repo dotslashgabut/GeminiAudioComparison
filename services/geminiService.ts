@@ -75,45 +75,80 @@ function normalizeTimestamp(ts: string): string {
 
 /**
  * Attempts to repair truncated JSON strings.
+ * ENHANCED: Now handles single-quoted JSON values or unescaped quotes more robustly
+ * to prevent skipping segments when the model outputs "bad" JSON.
  */
 function tryRepairJson(jsonString: string): any {
-  try {
-    return JSON.parse(jsonString);
-  } catch (e) {}
-
   const trimmed = jsonString.trim();
-  const lastObjectEnd = trimmed.lastIndexOf('}');
-  
-  if (lastObjectEnd === -1) {
-    throw new Error("Response too short or malformed to repair.");
-  }
 
-  const repaired = trimmed.substring(0, lastObjectEnd + 1) + "]}";
-  
+  // 1. Try standard parsing first
   try {
-    const parsed = JSON.parse(repaired);
+    const parsed = JSON.parse(trimmed);
     if (parsed.segments && Array.isArray(parsed.segments)) {
       return parsed;
     }
   } catch (e) {
-    const segments = [];
-    const segmentRegex = /\{\s*"startTime"\s*:\s*"([^"]+)"\s*,\s*"endTime"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
-    
-    let match;
-    while ((match = segmentRegex.exec(trimmed)) !== null) {
-      segments.push({
-        startTime: match[1],
-        endTime: match[2],
-        text: match[3]
-      });
-    }
-    
-    if (segments.length > 0) {
-      return { segments };
-    }
-    
-    throw e;
+    // Continue to repair logic
   }
+
+  // 2. Try to close truncated JSON
+  const lastObjectEnd = trimmed.lastIndexOf('}');
+  if (lastObjectEnd !== -1) {
+    const repaired = trimmed.substring(0, lastObjectEnd + 1) + "]}";
+    try {
+      const parsed = JSON.parse(repaired);
+      if (parsed.segments && Array.isArray(parsed.segments)) {
+        return parsed;
+      }
+    } catch (e) {
+      // Continue to regex fallback
+    }
+  }
+
+  // 3. Regex Fallback (The "Scraper" approach)
+  // This is crucial for handling cases where quotes are messed up.
+  // It looks for the pattern regardless of surrounding JSON validity.
+  // Supports both "text": "value" AND "text": 'value' (in case model goes rogue)
+  const segments = [];
+  
+  // Regex Explanation:
+  // Part 1: startTime key and value (double quotes)
+  // Part 2: endTime key and value (double quotes)
+  // Part 3: text key... AND THEN:
+  //         EITHER match double-quoted string: "((?:[^"\\]|\\.)*)"
+  //         OR match single-quoted string: '((?:[^'\\]|\\.)*)'
+  const segmentRegex = /\{\s*"startTime"\s*:\s*"([^"]+)"\s*,\s*"endTime"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/g;
+  
+  let match;
+  while ((match = segmentRegex.exec(trimmed)) !== null) {
+    // match[1] = startTime
+    // match[2] = endTime
+    // match[3] = text (if double quoted)
+    // match[4] = text (if single quoted)
+    const rawText = match[3] !== undefined ? match[3] : match[4];
+    
+    // We need to unescape manually since we bypassed JSON.parse
+    let unescapedText = rawText;
+    try {
+      // A quick hack to unescape standard JSON escapes using JSON.parse on a string fragment
+      unescapedText = JSON.parse(`"${rawText.replace(/"/g, '\\"')}"`); 
+    } catch (e) {
+      // If that fails, just basic replace
+      unescapedText = rawText.replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\\\/g, "\\");
+    }
+
+    segments.push({
+      startTime: match[1],
+      endTime: match[2],
+      text: unescapedText
+    });
+  }
+  
+  if (segments.length > 0) {
+    return { segments };
+  }
+  
+  throw new Error("Response structure invalid and could not be repaired.");
 }
 
 export async function transcribeAudio(
@@ -125,12 +160,11 @@ export async function transcribeAudio(
   try {
     const isGemini3 = modelName.includes('gemini-3');
     
-    // Strict English instructions to prevent temporal drift on repetitions
     const timingPolicy = `
     STRICT TIMING POLICY:
     1. ANTI-DRIFT: Do NOT predict timestamps based on patterns or rhythm. Use ACTUAL vocal onset for 'startTime'.
     2. REPETITION HANDLING: If multiple lines start with the same text, DO NOT advance the next timestamp prematurely. Each repetition must wait for the actual audio cue.
-    3. TEMPORAL ISOLATION: The 'endTime' of a segment must be precisely when the vocal stops. Do NOT "pad" the duration to reach the next line.
+    3. TEMPORAL ISOLATION: The 'endTime' of a segment must be precisely when the vocal stops.
     4. NO HALLUCINATION: If there is a silence between repetitions, the timestamps must reflect that silence.
     `;
 
@@ -138,7 +172,16 @@ export async function transcribeAudio(
     VERBATIM & SEGMENTATION:
     1. GRANULAR SEGMENTS: Create segments shorter than 5 seconds.
     2. FULL VERBATIM: Transcribe every single word, including "uhs", "umms", and repeated phrases.
-    3. NO DEDUPLICATION: If a phrase repeats 3 times, produce 3 distinct segments with unique, accurate timestamps.
+    3. NO DEDUPLICATION: If a phrase repeats 3 times, produce 3 distinct segments.
+    `;
+
+    // Added explicit instruction for JSON safety regarding quotes
+    const jsonSafetyPolicy = `
+    JSON FORMATTING SAFETY:
+    1. TEXT ESCAPING: The 'text' field MUST be wrapped in DOUBLE QUOTES (").
+    2. INTERNAL QUOTES: If the text contains a double quote, ESCAPE IT (e.g. \\"). 
+    3. SINGLE QUOTES: Single quotes (') in the text are allowed but MUST NOT break the JSON structure.
+    4. NO SINGLE QUOTE KEYS: Do NOT use single quotes for JSON keys (e.g. use "startTime", NOT 'startTime').
     `;
 
     const requestConfig: any = {
@@ -148,7 +191,6 @@ export async function transcribeAudio(
     };
 
     if (isGemini3) {
-      // High thinking budget for complex temporal reasoning
       requestConfig.thinkingConfig = { thinkingBudget: 4096 };
     }
 
@@ -174,6 +216,7 @@ export async function transcribeAudio(
                 
                 ${timingPolicy}
                 ${verbatimPolicy}
+                ${jsonSafetyPolicy}
                 
                 REQUIRED FORMAT: JSON object with "segments" array. 
                 Use HH:MM:SS.mmm for all timestamps.`,
