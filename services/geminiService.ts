@@ -184,10 +184,11 @@ export async function transcribeAudio(
     `;
 
     const verbatimPolicy = `
-    VERBATIM & FIDELITY:
+    VERBATIM & FIDELITY POLICY (EXTREMELY IMPORTANT):
     1. STRICT VERBATIM: Transcribe EXACTLY what is spoken. Do not paraphrase, summarize, or "correct" grammar.
-    2. REPETITIONS: Include all repetitions (e.g. "I... I... I don't know").
-    3. NO CLEANUP: Do not remove filler words like "um", "ah", "uh".
+    2. REPETITIONS & STUTTERS: You MUST transcribe every repeated sound. If the speaker says "eh eh eh eh eh", you must write "eh eh eh eh eh". Do not condense it to "eh".
+    3. FALSE STARTS: Keep all false starts (e.g. "I went to... I went home").
+    4. NO CLEANUP: Do not remove filler words like "um", "ah", "uh", "er".
     `;
 
     const completenessPolicy = `
