@@ -183,12 +183,21 @@ export async function transcribeAudio(
     5. ACCURACY: Sync text exactly to when it is spoken.
     `;
 
+    const subtitlePolicy = `
+    SUBTITLE & LYRIC OPTIMIZATION:
+    1. SEGMENTATION: Break text into short, readable chunks suitable for subtitles (karaoke/lyric style).
+    2. MAX DURATION: Prefer segments of 1-5 seconds. Avoid segments longer than 7 seconds unless it's a long sustained note.
+    3. PHRASING: Break segments at natural pauses, commas, or musical phrasing boundaries.
+    4. LINE LENGTH: Keep segments concise (under 42 characters if possible).
+    `;
+
     const verbatimPolicy = `
     VERBATIM & FIDELITY POLICY (EXTREMELY IMPORTANT):
-    1. STRICT VERBATIM: Transcribe EXACTLY what is spoken. Do not paraphrase, summarize, or "correct" grammar.
+    1. STRICT VERBATIM: Transcribe EXACTLY what is spoken/sung. Do not paraphrase, summarize, or "correct" grammar.
     2. REPETITIONS & STUTTERS: You MUST transcribe every repeated sound. If the speaker says "eh eh eh eh eh", you must write "eh eh eh eh eh". Do not condense it to "eh".
-    3. FALSE STARTS: Keep all false starts (e.g. "I went to... I went home").
-    4. NO CLEANUP: Do not remove filler words like "um", "ah", "uh", "er".
+    3. CHORUS & HOOKS: If lines are repeated in a song (e.g., chorus), transcribe them fully every time.
+    4. MUSICAL VOCABLES: Preserve "ooh", "aah", "la la la", "na na" if they are part of the lyrics/melody.
+    5. FALSE STARTS: Keep all false starts (e.g. "I went to... I went home").
     `;
 
     const completenessPolicy = `
@@ -196,14 +205,13 @@ export async function transcribeAudio(
     1. EXHAUSTIVE: You must transcribe the ENTIRE audio file from start to finish.
     2. NO SKIPPING: Do not skip any sentences or words, even if they are quiet or fast.
     3. NO DEDUPLICATION: If a speaker repeats the same sentence, you MUST transcribe it every time it is said.
-    4. SEGMENTATION: Break segments at least every 5-7 seconds. Do NOT create long segments.
     `;
 
     const antiHallucinationPolicy = `
     ANTI-HALLUCINATION:
     1. NO INVENTED TEXT: Do NOT output text if no speech is present.
     2. NO GUESSING: If audio is absolutely unintelligible, skip it.
-    3. NO LABELS: Do not add speaker labels (like "Speaker 1:").
+    3. NO LABELS: Do not add speaker labels (like "Speaker 1:", "Lyric:"). Just the raw spoken text.
     `;
 
     const jsonSafetyPolicy = `
@@ -240,9 +248,10 @@ export async function transcribeAudio(
                 },
               },
               {
-                text: `You are a high-fidelity, verbatim audio transcription engine. Your output must be exhaustive and complete.
+                text: `You are a high-fidelity, verbatim audio transcription engine optimized for **Subtitles and Lyrics**. Your output must be exhaustive, complete, and perfectly timed.
                 
                 ${timingPolicy}
+                ${subtitlePolicy}
                 ${verbatimPolicy}
                 ${completenessPolicy}
                 ${antiHallucinationPolicy}
